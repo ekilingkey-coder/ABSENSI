@@ -511,3 +511,120 @@ function savePhotoToDrive(base64Data, name, type) {
     return { success: false, url: "Gagal simpan foto: " + err.toString(), error: err.toString() };
   }
 }
+/**
+ * JALANKAN FUNGSI INI SEKALI SAJA UNTUK MEMBUAT TEMPLATE GOOGLE SHEETS OTOMATIS
+ */
+function setupTemplateSIPGN() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error("Buka Apps Script dari dalam Google Sheets.");
+
+  // 1. Set Zona Waktu Spreadsheet ke WIB (Asia/Jakarta)
+  ss.setSpreadsheetTimeZone("Asia/Jakarta");
+
+  // =========================================================
+  // SHEET 1: Daftar_Divisi
+  // =========================================================
+  var divSheet = ss.getSheetByName("Daftar_Divisi") || ss.insertSheet("Daftar_Divisi");
+  if (divSheet.getLastRow() === 0) {
+    divSheet.appendRow(["Nama Divisi"]);
+  }
+  var divHeader = divSheet.getRange(1, 1, 1, 1);
+  divHeader.setValue("Nama Divisi")
+    .setBackground("#F59E0B").setFontColor("#000000")
+    .setFontWeight("bold").setHorizontalAlignment("center");
+  divSheet.setFrozenRows(1);
+  divSheet.setColumnWidth(1, 240);
+  divSheet.getRange("A2:A100").setNumberFormat("@");
+
+  // Isi default divisi jika masih kosong
+  if (divSheet.getLastRow() <= 1) {
+    var defaultDivs = [
+      ["PERSIAPAN"],
+      ["PENGOLAHAN"],
+      ["PEMORSIAN"],
+      ["DISTRIBUSI"],
+      ["CUCI ALAT"],
+      ["KEAMANAN & KEBERSIHAN"]
+    ];
+    divSheet.getRange(2, 1, defaultDivs.length, 1).setValues(defaultDivs);
+  }
+
+  // =========================================================
+  // SHEET 2: Data_Relawan
+  // =========================================================
+  var volSheet = ss.getSheetByName("Data_Relawan") || ss.insertSheet("Data_Relawan");
+  var volHeaders = ["ID Relawan", "Nama Lengkap", "Divisi", "Honor Harian (Rp)", "PIN / Password"];
+  volSheet.getRange(1, 1, 1, volHeaders.length).setValues([volHeaders])
+    .setBackground("#0D2F72").setFontColor("#FFFFFF")
+    .setFontWeight("bold").setHorizontalAlignment("center");
+  volSheet.setFrozenRows(1);
+
+  // Atur lebar kolom & format sel (PENTING: Plain Text @ untuk ID & PIN)
+  volSheet.setColumnWidth(1, 110);
+  volSheet.setColumnWidth(2, 240);
+  volSheet.setColumnWidth(3, 190);
+  volSheet.setColumnWidth(4, 150);
+  volSheet.setColumnWidth(5, 130);
+
+  volSheet.getRange("A2:C1000").setNumberFormat("@");
+  volSheet.getRange("D2:D1000").setNumberFormat("#,##0");
+  volSheet.getRange("E2:E1000").setNumberFormat("@");
+
+  // Pasang Dropdown Divisi otomatis dari sheet Daftar_Divisi
+  var divRule = SpreadsheetApp.newDataValidation()
+    .requireValueInRange(divSheet.getRange("A2:A100"), true)
+    .setAllowInvalid(true)
+    .build();
+  volSheet.getRange("C2:C1000").setDataValidation(divRule);
+
+  // Isi contoh data relawan jika masih kosong
+  if (volSheet.getLastRow() <= 1) {
+    var sampleVolunteers = [
+      ["V001", "Budi Santoso", "PENGOLAHAN", 100000, "1234"],
+      ["V002", "Siti Aminah", "PEMORSIAN", 100000, "1234"],
+      ["V003", "Ahmad Fauzi", "DISTRIBUSI", 100000, "0123"]
+    ];
+    volSheet.getRange(2, 1, sampleVolunteers.length, 5).setValues(sampleVolunteers);
+  }
+
+  // =========================================================
+  // SHEET 3: Presensi_Relawan
+  // =========================================================
+  var attSheet = ss.getSheetByName("Presensi_Relawan") || ss.insertSheet("Presensi_Relawan");
+  var attHeaders = [
+    "Waktu Server",
+    "ID Presensi",
+    "Tanggal Laporan Operasional",
+    "Nama Relawan",
+    "Divisi",
+    "Jenis Presensi",
+    "Koordinat GPS",
+    "Aktivitas / Catatan",
+    "Link Swafoto Drive",
+    "Honor (Rp)",
+    "Status Verifikasi"
+  ];
+  attSheet.getRange(1, 1, 1, attHeaders.length).setValues([attHeaders])
+    .setBackground("#1B365D").setFontColor("#FFFFFF")
+    .setFontWeight("bold").setHorizontalAlignment("center");
+  attSheet.setFrozenRows(1);
+
+  // Atur lebar kolom & format
+  var widths = [165, 175, 185, 210, 160, 120, 180, 260, 250, 130, 165];
+  for (var i = 0; i < widths.length; i++) {
+    attSheet.setColumnWidth(i + 1, widths[i]);
+  }
+  attSheet.getRange("A2:A2000").setNumberFormat("dd/MM/yyyy HH:mm:ss");
+  attSheet.getRange("B2:I2000").setNumberFormat("@");
+  attSheet.getRange("J2:J2000").setNumberFormat("#,##0");
+  attSheet.getRange("K2:K2000").setNumberFormat("@");
+
+  // Hapus sheet bawaan "Sheet1" jika masih kosong & tidak dipakai
+  var sheet1 = ss.getSheetByName("Sheet1");
+  if (sheet1 && sheet1.getLastRow() === 0 && ss.getSheets().length > 1) {
+    ss.deleteSheet(sheet1);
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log("Template SIPGN berhasil dibuat & dirapikan!");
+}
