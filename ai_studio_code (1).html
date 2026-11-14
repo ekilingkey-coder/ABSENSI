@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SIPGN BGN - Presensi Relawan Dapur MBG</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+    .bgn-gradient {
+      background: linear-gradient(135deg, #0D2F72 0%, #1B365D 65%, #102a54 100%);
+    }
+    .mirror-video {
+      transform: scaleX(-1);
+    }
+    .tab-active {
+      background-color: #ffffff;
+      color: #0D2F72;
+      box-shadow: 0 2px 6px rgba(13, 47, 114, 0.12);
+    }
+    /* Animasi loading */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- HEADER -->
+  <header class="bgn-gradient text-white shadow-lg sticky top-0 z-30">
+    <div class="max-w-5xl mx-auto px-4 py-3.5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-amber-400 text-slate-900 flex items-center justify-center font-extrabold text-lg shadow-inner shrink-0">
+            MBG
+          </div>
+          <div>
+            <h1 class="text-base sm:text-lg font-extrabold tracking-tight leading-tight">
+              SIPGN - BGN
+            </h1>
+            <p class="text-xs text-blue-200">Presensi Relawan Dapur Makan Bergizi Gratis</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 text-xs">
+          <div id="apiStatusBadge" class="px-2.5 py-1 rounded-full bg-white/10 border border-white/20 flex items-center gap-1.5">
+            <span id="apiStatusDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span id="apiStatusText">Belum Terhubung API</span>
+          </div>
+          <button onclick="openApiModal()" class="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold transition">
+            Google Sheets API
+          </button>
+        </div>
+      </div>
+
+      <!-- Info Siklus & Jam -->
+      <div class="mt-3 pt-2.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-100">
+        <div class="flex items-center gap-2">
+          <span class="px-2 py-0.5 rounded bg-blue-900/70 border border-blue-400/30 font-medium">
+            Siklus 19:00 - 19:00
+          </span>
+          <span>Laporan Tgl: <strong id="headerReportDate" class="text-amber-300">-</strong></span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="offlineQueueBadge" class="hidden px-2 py-0.5 rounded bg-rose-500 text-white font-semibold cursor-pointer" onclick="syncOfflineQueue()">
+            Antrean Offline: <span id="offlineQueueCount">0</span>
+          </span>
+          <span id="liveClock" class="font-mono font-semibold text-white">--:--:-- WIB</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAVIGATION TABS -->
+    <div class="max-w-5xl mx-auto px-4 pb-3">
+      <div class="grid grid-cols-3 gap-1.5 bg-blue-950/50 p-1 rounded-xl">
+        <button id="tabBtnPresensi" onclick="switchTab('presensi')" class="tab-active py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition">
+          1. Presensi
+        </button>
+        <button id="tabBtnRiwayat" onclick="switchTab('riwayat')" class="text-blue-100 hover:bg-white/10 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition">
+          2. Riwayat & Rekap
+        </button>
+        <button id="tabBtnAdmin" onclick="switchTab('admin')" class="text-blue-100 hover:bg-white/10 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition">
+          3. Admin & Relawan
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-5 space-y-5">
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 space-y-2 max-w-sm w-[calc(100%-2rem)] pointer-events-none"></div>
+
+    <!-- ==================== TAB 1: PRESENSI RELAWAN ==================== -->
+    <section id="tabPresensi" class="space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+        <!-- FORM IDENTITAS & LOKASI -->
+        <div class="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 class="font-bold text-slate-800 text-base">Data Kehadiran Relawan</h2>
+            <button onclick="syncVolunteersFromServer(true)" class="text-xs text-blue-700 hover:text-blue-900 font-semibold flex items-center gap-1">
+              ↻ Segarkan Relawan
+            </button>
+          </div>
+
+          <!-- Pilih Relawan -->
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">Nama Relawan</label>
+            <select id="presensiVolunteerSelect" onchange="onVolunteerSelectChange()" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none bg-white">
+              <option value="">-- Pilih Nama Anda --</option>
+            </select>
+            <div id="selectedVolunteerInfo" class="hidden mt-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-900 flex justify-between items-center">
+              <span>Divisi: <strong id="infoDivisi">-</strong></span>
+              <span>Honor: <strong id="infoHonor">-</strong></span>
+            </div>
+          </div>
+
+          <!-- PIN Relawan -->
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">PIN Relawan</label>
+            <input type="password" id="presensiPin" inputmode="numeric" placeholder="Masukkan PIN (default: 1234)" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none" />
+          </div>
+
+          <!-- Jenis Presensi -->
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">Jenis Presensi</label>
+            <div class="grid grid-cols-2 gap-2.5">
+              <button type="button" id="btnTypeMasuk" onclick="setPresensiType('MASUK')" class="py-2.5 px-4 rounded-xl border-2 border-emerald-600 bg-emerald-50 text-emerald-800 font-bold text-sm transition">
+                ✓ MASUK SHIFT
+              </button>
+              <button type="button" id="btnTypePulang" onclick="setPresensiType('PULANG')" class="py-2.5 px-4 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition">
+                ⇦ PULANG SHIFT
+              </button>
+            </div>
+          </div>
+
+          <!-- Koordinat GPS -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-bold text-slate-600 uppercase">Lokasi GPS Dapur</label>
+              <button type="button" onclick="fetchGPS()" class="text-xs text-blue-700 hover:underline font-semibold">
+                Perbarui Lokasi
+              </button>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <span id="gpsText" class="font-mono font-semibold text-slate-700">Mencari titik GPS...</span>
+                <span id="gpsAccuracyBadge" class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">-</span>
+              </div>
+              <a id="gpsMapLink" href="#" target="_blank" class="hidden text-blue-600 hover:underline inline-block">
+                Lihat posisi di Google Maps ↗
+              </a>
+            </div>
+          </div>
+
+          <!-- Catatan Tugas -->
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">Catatan Aktivitas / Menu (Opsional)</label>
+            <textarea id="presensiNote" rows="2" placeholder="Contoh: Masak nasi & tumis buncis 3.000 porsi" class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none"></textarea>
+          </div>
+        </div>
+
+        <!-- KAMERA SWAFOTO & SUBMIT -->
+        <div class="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between space-y-4">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 class="font-bold text-slate-800 text-base">Swafoto Bukti Kehadiran</h2>
+              <span class="text-xs text-slate-500">Wajib foto langsung</span>
+            </div>
+
+            <!-- Area Kamera / Preview -->
+            <div class="relative w-full aspect-[4/3] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center border border-slate-300">
+              <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-cover mirror-video hidden"></video>
+              <img id="photoPreview" alt="Preview Swafoto" class="w-full h-full object-cover hidden" />
+              <div id="cameraPlaceholder" class="text-center p-4 text-slate-400 text-xs space-y-2">
+                <svg class="w-10 h-10 mx-auto text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <p>Klik "Buka Kamera" untuk mengambil swafoto di area dapur.</p>
+              </div>
+            </div>
+            <canvas id="photoCanvas" class="hidden"></canvas>
+
+            <!-- Tombol Kontrol Kamera -->
+            <div class="flex flex-wrap gap-2">
+              <button type="button" id="btnStartCamera" onclick="startCamera()" class="flex-1 py-2.5 px-3 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs sm:text-sm font-bold transition">
+                Buka Kamera
+              </button>
+              <button type="button" id="btnTakePhoto" onclick="takePhoto()" class="hidden flex-1 py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs sm:text-sm font-bold transition">
+                Ambil Foto
+              </button>
+              <button type="button" id="btnRetakePhoto" onclick="retakePhoto()" class="hidden flex-1 py-2.5 px-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs sm:text-sm font-bold transition">
+                Foto Ulang
+              </button>
+              <!-- Fallback upload kamera native HP jika getUserMedia diblokir browser -->
+              <label class="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer border border-slate-300 flex items-center justify-center">
+                Kamera HP
+                <input type="file" accept="image/*" capture="user" onchange="handleFallbackPhoto(event)" class="hidden" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Tombol Submit Utama -->
+          <div class="pt-2 border-t border-slate-100">
+            <button type="button" id="btnSubmitPresensi" onclick="submitPresensi()" class="w-full py-3.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm sm:text-base shadow-md transition flex items-center justify-center gap-2">
+              <span>KIRIM PRESENSI SEKARANG</span>
+            </button>
+            <p class="text-[11px] text-slate-400 text-center mt-2">
+              Foto otomatis diberi stempel waktu WIB, nama relawan, & koordinat GPS.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: RIWAYAT & REKAP ==================== -->
+    <section id="tabRiwayat" class="hidden space-y-4">
+      <!-- Ringkasan -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <p class="text-xs text-slate-500 font-semibold">Total Catatan</p>
+          <p id="statTotal" class="text-2xl font-extrabold text-slate-800 mt-1">0</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <p class="text-xs text-emerald-600 font-semibold">Presensi Masuk</p>
+          <p id="statMasuk" class="text-2xl font-extrabold text-emerald-700 mt-1">0</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <p class="text-xs text-blue-600 font-semibold">Presensi Pulang</p>
+          <p id="statPulang" class="text-2xl font-extrabold text-blue-700 mt-1">0</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <p class="text-xs text-amber-600 font-semibold">Est. Honor (Masuk)</p>
+          <p id="statHonor" class="text-lg sm:text-xl font-extrabold text-slate-800 mt-1">Rp 0</p>
+        </div>
+      </div>
+
+      <!-- Filter & Aksi -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-end justify-between gap-3">
+        <div class="flex flex-wrap items-end gap-3 flex-1">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Tanggal Laporan</label>
+            <input type="date" id="filterReportDate" onchange="renderAttendanceTable()" class="rounded-xl border border-slate-300 px-3 py-2 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+          </div>
+          <div class="flex-1 min-w-[160px]">
+            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Cari Nama / Divisi</label>
+            <input type="text" id="filterSearch" oninput="renderAttendanceTable()" placeholder="Ketik nama atau divisi..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+          </div>
+          <button onclick="clearDateFilter()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold">
+            Semua Tanggal
+          </button>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="fetchAttendancesFromServer()" class="px-3.5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold transition">
+            ↻ Tarik dari Google Sheets
+          </button>
+          <button onclick="exportAttendanceCSV()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition">
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      <!-- Tabel Riwayat -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead class="bg-slate-800 text-white text-xs uppercase">
+              <tr>
+                <th class="p-3">Waktu</th>
+                <th class="p-3">Tgl Ops</th>
+                <th class="p-3">Nama Relawan</th>
+                <th class="p-3">Divisi</th>
+                <th class="p-3">Jenis</th>
+                <th class="p-3">Catatan</th>
+                <th class="p-3">Bukti</th>
+              </tr>
+            </thead>
+            <tbody id="attendanceTableBody" class="divide-y divide-slate-100">
+              <tr>
+                <td colspan="7" class="p-6 text-center text-slate-400">Belum ada data presensi ditampilkan.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: ADMIN & RELAWAN ==================== -->
+    <section id="tabAdmin" class="hidden space-y-4">
+
+      <!-- Gate Login Admin -->
+      <div id="adminLockBox" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 max-w-md mx-auto text-center space-y-4">
+        <div class="w-12 h-12 rounded-2xl bg-blue-100 text-blue-800 flex items-center justify-center mx-auto font-bold text-lg">
+          🔐
+        </div>
+        <div>
+          <h2 class="text-base font-extrabold text-slate-800">Akses Panel Admin Dapur</h2>
+          <p class="text-xs text-slate-500 mt-1">Masukkan PIN Admin untuk mengelola daftar relawan, divisi, dan sinkronisasi database.</p>
+        </div>
+        <input type="password" id="adminPinInput" placeholder="PIN Admin (default: 123456)" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-center tracking-widest focus:ring-2 focus:ring-blue-600 outline-none" onkeydown="if(event.key==='Enter') unlockAdmin()" />
+        <button onclick="unlockAdmin()" class="w-full py-2.5 rounded-xl bg-blue-800 hover:bg-blue-900 text-white font-bold text-sm transition">
+          Buka Panel Admin
+        </button>
+      </div>
+
+      <!-- Konten Admin (Setelah Unlock) -->
+      <div id="adminContentBox" class="hidden space-y-5">
+
+        <!-- Bar Sinkronisasi -->
+        <div class="bg-blue-900 text-white rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <div>
+            <h2 class="font-bold text-sm sm:text-base">Sinkronisasi Database Relawan & Divisi</h2>
+            <p class="text-xs text-blue-200">Simpan perubahan ke Google Sheets agar semua HP relawan otomatis terupdate.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="syncVolunteersFromServer(true)" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition">
+              ↓ Tarik dari Sheets
+            </button>
+            <button onclick="syncVolunteersToServer()" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 text-xs font-extrabold transition">
+              ↑ Simpan ke Sheets
+            </button>
+            <button onclick="lockAdmin()" class="px-3 py-2 rounded-xl bg-rose-500/80 hover:bg-rose-600 text-white text-xs font-bold transition">
+              Kunci Admin
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <!-- Form Tambah/Edit Relawan -->
+          <div class="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+            <h3 id="volunteerFormTitle" class="font-bold text-slate-800 text-sm border-b border-slate-100 pb-2">
+              Tambah Relawan Baru
+            </h3>
+            <input type="hidden" id="editVolunteerIndex" value="-1" />
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">ID Relawan</label>
+                <input type="text" id="volId" placeholder="Otomatis (V001)" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">PIN Login</label>
+                <input type="text" id="volPin" value="1234" placeholder="1234" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Nama Lengkap</label>
+              <input type="text" id="volName" placeholder="Nama lengkap relawan" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Divisi</label>
+                <select id="volRole" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-600"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Honor Harian (Rp)</label>
+                <input type="number" id="volHonor" value="100000" min="0" step="5000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+            </div>
+
+            <div class="flex gap-2 pt-1">
+              <button onclick="saveVolunteerForm()" class="flex-1 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs sm:text-sm font-bold transition">
+                Simpan Relawan
+              </button>
+              <button id="btnCancelEditVol" onclick="resetVolunteerForm()" class="hidden px-3 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold">
+                Batal
+              </button>
+            </div>
+
+            <!-- Manajemen Divisi & Ubah PIN Admin -->
+            <div class="pt-4 mt-4 border-t border-slate-100 space-y-3">
+              <h4 class="font-bold text-slate-700 text-xs uppercase">Kelola Daftar Divisi</h4>
+              <div class="flex gap-2">
+                <input type="text" id="newDivisionInput" placeholder="Nama divisi baru..." class="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600" />
+                <button onclick="addDivision()" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs font-bold">
+                  + Tambah
+                </button>
+              </div>
+              <div id="divisionChips" class="flex flex-wrap gap-1.5"></div>
+            </div>
+
+            <div class="pt-3 border-t border-slate-100 space-y-2">
+              <h4 class="font-bold text-slate-700 text-xs uppercase">Ubah PIN Admin Browser Ini</h4>
+              <div class="flex gap-2">
+                <input type="password" id="newAdminPinInput" placeholder="PIN Admin baru..." class="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none" />
+                <button onclick="changeAdminPin()" class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold">
+                  Ubah PIN
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabel Daftar Relawan -->
+          <div class="lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 class="font-bold text-slate-800 text-sm">Daftar Relawan (<span id="volunteerCountBadge">0</span>)</h3>
+              <span class="text-[11px] text-slate-400">Klik "Simpan ke Sheets" setelah mengubah data</span>
+            </div>
+            <div class="overflow-x-auto flex-1">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="bg-slate-100 text-slate-600 uppercase">
+                  <tr>
+                    <th class="p-3">ID</th>
+                    <th class="p-3">Nama Lengkap</th>
+                    <th class="p-3">Divisi</th>
+                    <th class="p-3">Honor</th>
+                    <th class="p-3">PIN</th>
+                    <th class="p-3 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="adminVolunteerTableBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL PENGATURAN GOOGLE SHEETS API -->
+  <div id="apiModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-extrabold text-slate-800 text-base">Konfigurasi Google Sheets API</h3>
+        <button onclick="closeApiModal()" class="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs sm:text-sm">
+        <p class="text-slate-600 text-xs">
+          Tempel URL Web App Google Apps Script yang berakhiran <code class="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-blue-700">/exec</code>.
+        </p>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">URL Web App (/exec)</label>
+          <input type="url" id="apiUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-600" />
+        </div>
+        <div id="apiTestResult" class="hidden p-3 rounded-xl text-xs"></div>
+      </div>
+
+      <div class="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
+        <button onclick="testApiConnection()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold">
+          Tes Koneksi
+        </button>
+        <button onclick="saveApiUrl()" class="px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold">
+          Simpan & Sinkronkan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="text-center text-xs text-slate-400 py-4 px-4">
+    SIPGN BGN - Sistem Presensi Relawan Dapur MBG • Terhubung Google Sheets & Google Drive
+  </footer>
+
+  <!-- ==================== JAVASCRIPT ==================== -->
+  <script>
+    // ---------- KONFIGURASI & STATE ----------
+    var STORAGE_KEYS = {
+      API_URL: "sipgn_api_url",
+      VOLUNTEERS: "sipgn_volunteers",
+      DIVISIONS: "sipgn_divisions",
+      ATTENDANCES: "sipgn_attendances_local",
+      OFFLINE_QUEUE: "sipgn_offline_queue",
+      ADMIN_PIN: "sipgn_admin_pin"
+    };
+
+    var DEFAULT_DIVISIONS = [
+      "PERSIAPAN",
+      "PENGOLAHAN",
+      "PEMORSIAN",
+      "DISTRIBUSI",
+      "CUCI ALAT",
+      "KEAMANAN & KEBERSIHAN"
+    ];
+
+    var DEFAULT_VOLUNTEERS = [
+      { id: "V001", name: "Contoh Relawan 1", role: "PENGOLAHAN", honor: 100000, password: "1234" },
+      { id: "V002", name: "Contoh Relawan 2", role: "PEMORSIAN", honor: 100000, password: "1234" }
+    ];
+
+    var state = {
+      apiUrl: "",
+      volunteers: [],
+      divisions: [],
+      attendances: [],
+      offlineQueue: [],
+      presensiType: "MASUK",
+      gpsCoords: "",
+      gpsAccuracy: null,
+      capturedPhotoBase64: "",
+      mediaStream: null,
+      isAdminUnlocked: false
+    };
+
+    // ---------- INISIALISASI ----------
+    document.addEventListener("DOMContentLoaded", function() {
+      loadFromLocalStorage();
+      checkUrlQueryParams();
+      startClock();
+      updateApiStatusUI();
+      renderDivisionsUI();
+      renderVolunteerDropdown();
+      renderAdminVolunteerTable();
+      updateOfflineQueueUI();
+
+      // Set default filter tanggal hari operasional saat ini
+      document.getElementById("filterReportDate").value = getOperationalReportDate();
+      renderAttendanceTable();
+
+      // Ambil GPS otomatis saat buka halaman
+      fetchGPS();
+
+      // Jika sudah ada URL API, sinkronkan relawan & riwayat secara latar belakang
+      if (state.apiUrl) {
+        syncVolunteersFromServer(false);
+        fetchAttendancesFromServer(true);
+      }
+
+      // Auto-sync antrean offline saat koneksi internet kembali online
+      window.addEventListener("online", function() {
+        showToast("Koneksi internet tersambung kembali.", "info");
+        if (state.offlineQueue.length > 0) {
+          syncOfflineQueue();
+        }
+      });
+    });
+
+    function loadFromLocalStorage() {
+      state.apiUrl = localStorage.getItem(STORAGE_KEYS.API_URL) || "";
+
+      try {
+        var savedDivs = JSON.parse(localStorage.getItem(STORAGE_KEYS.DIVISIONS));
+        state.divisions = (Array.isArray(savedDivs) && savedDivs.length > 0) ? savedDivs : DEFAULT_DIVISIONS.slice();
+      } catch (e) {
+        state.divisions = DEFAULT_DIVISIONS.slice();
+      }
+
+      try {
+        var savedVols = JSON.parse(localStorage.getItem(STORAGE_KEYS.VOLUNTEERS));
+        state.volunteers = Array.isArray(savedVols) ? savedVols : DEFAULT_VOLUNTEERS.slice();
+      } catch (e) {
+        state.volunteers = DEFAULT_VOLUNTEERS.slice();
+      }
+
+      try {
+        var savedAtt = JSON.parse(localStorage.getItem(STORAGE_KEYS.ATTENDANCES));
+        state.attendances = Array.isArray(savedAtt) ? savedAtt : [];
+      } catch (e) {
+        state.attendances = [];
+      }
+
+      try {
+        var savedQueue = JSON.parse(localStorage.getItem(STORAGE_KEYS.OFFLINE_QUEUE));
+        state.offlineQueue = Array.isArray(savedQueue) ? savedQueue : [];
+      } catch (e) {
+        state.offlineQueue = [];
+      }
+    }
+
+    function checkUrlQueryParams() {
+      var params = new URLSearchParams(window.location.search);
+      var apiParam = params.get("api");
+      if (apiParam && apiParam.indexOf("script.google.com") !== -1) {
+        state.apiUrl = apiParam.trim();
+        localStorage.setItem(STORAGE_KEYS.API_URL, state.apiUrl);
+        showToast("URL Google Sheets API otomatis terpasang!", "success");
+      }
+    }
+
+    // ---------- JAM & TANGGAL OPERASIONAL (SIKLUS 19:00 - 19:00) ----------
+    function getOperationalReportDate(dateObj) {
+      var now = dateObj ? new Date(dateObj) : new Date();
+      // Jika jam >= 19:00, masuk siklus laporan tanggal hari esok
+      if (now.getHours() >= 19) {
+        now.setDate(now.getDate() + 1);
+      }
+      var y = now.getFullYear();
+      var m = String(now.getMonth() + 1).padStart(2, "0");
+      var d = String(now.getDate()).padStart(2, "0");
+      return y + "-" + m + "-" + d;
+    }
+
+    function startClock() {
+      function tick() {
+        var now = new Date();
+        var hh = String(now.getHours()).padStart(2, "0");
+        var mm = String(now.getMinutes()).padStart(2, "0");
+        var ss = String(now.getSeconds()).padStart(2, "0");
+        document.getElementById("liveClock").textContent = hh + ":" + mm + ":" + ss + " WIB";
+        document.getElementById("headerReportDate").textContent = getOperationalReportDate(now);
+      }
+      tick();
+      setInterval(tick, 1000);
+    }
+
+    // ---------- NAVIGASI TAB ----------
+    function switchTab(tabName) {
+      var tabs = ["presensi", "riwayat", "admin"];
+      tabs.forEach(function(t) {
+        var section = document.getElementById("tab" + capitalize(t));
+        var btn = document.getElementById("tabBtn" + capitalize(t));
+        if (t === tabName) {
+          section.classList.remove("hidden");
+          btn.classList.add("tab-active");
+          btn.classList.remove("text-blue-100", "hover:bg-white/10");
+        } else {
+          section.classList.add("hidden");
+          btn.classList.remove("tab-active");
+          btn.classList.add("text-blue-100", "hover:bg-white/10");
+        }
+      });
+
+      // Matikan kamera jika pindah dari tab presensi agar hemat baterai
+      if (tabName !== "presensi") {
+        stopCamera();
+      }
+      if (tabName === "riwayat") {
+        renderAttendanceTable();
+      }
+    }
+
+    // ---------- PRESENSI RELAWAN ----------
+    function renderVolunteerDropdown() {
+      var select = document.getElementById("presensiVolunteerSelect");
+      var currentVal = select.value;
+      select.innerHTML = '<option value="">-- Pilih Nama Anda --</option>';
+
+      var sorted = state.volunteers.slice().sort(function(a, b) {
+        return String(a.name).localeCompare(String(b.name));
+      });
+
+      sorted.forEach(function(v) {
+        var opt = document.createElement("option");
+        opt.value = v.id;
+        opt.textContent = v.name + " (" + v.role + ")";
+        select.appendChild(opt);
+      });
+
+      if (currentVal) select.value = currentVal;
+      onVolunteerSelectChange();
+    }
+
+    function onVolunteerSelectChange() {
+      var id = document.getElementById("presensiVolunteerSelect").value;
+      var infoBox = document.getElementById("selectedVolunteerInfo");
+      var vol = findVolunteerById(id);
+
+      if (vol) {
+        document.getElementById("infoDivisi").textContent = vol.role || "-";
+        document.getElementById("infoHonor").textContent = formatRupiah(vol.honor);
+        infoBox.classList.remove("hidden");
+      } else {
+        infoBox.classList.add("hidden");
+      }
+    }
+
+    function setPresensiType(type) {
+      state.presensiType = type;
+      var btnMasuk = document.getElementById("btnTypeMasuk");
+      var btnPulang = document.getElementById("btnTypePulang");
+
+      if (type === "MASUK") {
+        btnMasuk.className = "py-2.5 px-4 rounded-xl border-2 border-emerald-600 bg-emerald-50 text-emerald-800 font-bold text-sm transition";
+        btnPulang.className = "py-2.5 px-4 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition";
+      } else {
+        btnPulang.className = "py-2.5 px-4 rounded-xl border-2 border-blue-600 bg-blue-50 text-blue-800 font-bold text-sm transition";
+        btnMasuk.className = "py-2.5 px-4 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition";
+      }
+    }
+
+    // ---------- GPS GEOLOCATION ----------
+    function fetchGPS() {
+      var gpsText = document.getElementById("gpsText");
+      var accBadge = document.getElementById("gpsAccuracyBadge");
+      var mapLink = document.getElementById("gpsMapLink");
+
+      if (!navigator.geolocation) {
+        gpsText.textContent = "Browser tidak mendukung GPS";
+        accBadge.textContent = "Error";
+        return;
+      }
+
+      gpsText.textContent = "Mengambil koordinat...";
+      accBadge.textContent = "...";
+
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          var lat = pos.coords.latitude.toFixed(6);
+          var lng = pos.coords.longitude.toFixed(6);
+          var acc = Math.round(pos.coords.accuracy);
+
+          state.gpsCoords = lat + ", " + lng;
+          state.gpsAccuracy = acc;
+
+          gpsText.textContent = state.gpsCoords;
+          accBadge.textContent = "±" + acc + " m";
+          accBadge.className = acc <= 100
+            ? "px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold"
+            : "px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold";
+
+          mapLink.href = "https://www.google.com/maps?q=" + lat + "," + lng;
+          mapLink.classList.remove("hidden");
+        },
+        function(err) {
+          state.gpsCoords = "";
+          gpsText.textContent = "Gagal akses GPS (" + err.message + ")";
+          accBadge.textContent = "Nonaktif";
+          accBadge.className = "px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold";
+          mapLink.classList.add("hidden");
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    }
+
+    // ---------- KAMERA SWAFOTO & WATERMARK ----------
+    function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast("Kamera langsung tidak tersedia di browser ini. Gunakan tombol 'Kamera HP'.", "error");
+        return;
+      }
+
+      stopCamera();
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } },
+        audio: false
+      })
+      .then(function(stream) {
+        state.mediaStream = stream;
+        var video = document.getElementById("cameraVideo");
+        video.srcObject = stream;
+        video.classList.remove("hidden");
+        document.getElementById("photoPreview").classList.add("hidden");
+        document.getElementById("cameraPlaceholder").classList.add("hidden");
+
+        document.getElementById("btnStartCamera").classList.add("hidden");
+        document.getElementById("btnTakePhoto").classList.remove("hidden");
+        document.getElementById("btnRetakePhoto").classList.add("hidden");
+      })
+      .catch(function(err) {
+        showToast("Izin kamera ditolak / gagal: " + err.message + ". Bisa gunakan tombol 'Kamera HP'.", "error");
+      });
+    }
+
+    function stopCamera() {
+      if (state.mediaStream) {
+        state.mediaStream.getTracks().forEach(function(track) {
+          track.stop();
+        });
+        state.mediaStream = null;
+      }
+    }
+
+    function takePhoto() {
+      var video = document.getElementById("cameraVideo");
+      if (!video.videoWidth) {
+        showToast("Kamera belum siap, tunggu sebentar.", "error");
+        return;
+      }
+
+      var canvas = document.getElementById("photoCanvas");
+      var maxWidth = 720;
+      var scale = Math.min(1, maxWidth / video.videoWidth);
+      var w = Math.round(video.videoWidth * scale);
+      var h = Math.round(video.videoHeight * scale);
+
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext("2d");
+
+      // Gambar mirror sesuai preview kamera depan
+      ctx.save();
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, w, h);
+      ctx.restore();
+
+      drawWatermarkOnCanvas(ctx, w, h);
+
+      state.capturedPhotoBase64 = canvas.toDataURL("image/jpeg", 0.72);
+      showCapturedPreview();
+      stopCamera();
+    }
+
+    function handleFallbackPhoto(event) {
+      var file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var img = new Image();
+        img.onload = function() {
+          var canvas = document.getElementById("photoCanvas");
+          var maxWidth = 720;
+          var scale = Math.min(1, maxWidth / img.width);
+          var w = Math.round(img.width * scale);
+          var h = Math.round(img.height * scale);
+
+          canvas.width = w;
+          canvas.height = h;
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          drawWatermarkOnCanvas(ctx, w, h);
+
+          state.capturedPhotoBase64 = canvas.toDataURL("image/jpeg", 0.72);
+          stopCamera();
+          showCapturedPreview();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function drawWatermarkOnCanvas(ctx, w, h) {
+      var vol = findVolunteerById(document.getElementById("presensiVolunteerSelect").value);
+      var volName = vol ? vol.name : "Relawan MBG";
+      var nowStr = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB";
+      var gpsStr = state.gpsCoords || "GPS tidak tersedia";
+
+      var barHeight = 54;
+      ctx.fillStyle = "rgba(13, 47, 114, 0.75)";
+      ctx.fillRect(0, h - barHeight, w, barHeight);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("SIPGN BGN • " + volName + " (" + state.presensiType + ")", 12, h - 32);
+
+      ctx.fillStyle = "#fde68a";
+      ctx.font = "12px monospace";
+      ctx.fillText(nowStr + " | GPS: " + gpsStr, 12, h - 12);
+    }
+
+    function showCapturedPreview() {
+      var preview = document.getElementById("photoPreview");
+      preview.src = state.capturedPhotoBase64;
+      preview.classList.remove("hidden");
+
+      document.getElementById("cameraVideo").classList.add("hidden");
+      document.getElementById("cameraPlaceholder").classList.add("hidden");
+
+      document.getElementById("btnStartCamera").classList.add("hidden");
+      document.getElementById("btnTakePhoto").classList.add("hidden");
+      document.getElementById("btnRetakePhoto").classList.remove("hidden");
+    }
+
+    function retakePhoto() {
+      state.capturedPhotoBase64 = "";
+      document.getElementById("photoPreview").classList.add("hidden");
+      startCamera();
+    }
+
+    // ---------- KIRIM PRESENSI ----------
+    function submitPresensi() {
+      var volId = document.getElementById("presensiVolunteerSelect").value;
+      var pin = document.getElementById("presensiPin").value.trim();
+      var note = document.getElementById("presensiNote").value.trim();
+
+      if (!volId) {
+        showToast("Silakan pilih nama relawan terlebih dahulu.", "error");
+        return;
+      }
+
+      var vol = findVolunteerById(volId);
+      if (!vol) {
+        showToast("Data relawan tidak valid.", "error");
+        return;
+      }
+
+      if (pin !== String(vol.password || "1234")) {
+        showToast("PIN relawan salah! Periksa kembali PIN Anda.", "error");
+        return;
+      }
+
+      if (!state.gpsCoords) {
+        showToast("Lokasi GPS belum terbaca. Pastikan izin lokasi aktif lalu klik 'Perbarui Lokasi'.", "error");
+        return;
+      }
+
+      if (!state.capturedPhotoBase64) {
+        showToast("Swafoto wajib diambil sebelum mengirim presensi.", "error");
+        return;
+      }
+
+      var payload = {
+        id: "AT-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+        reportDate: getOperationalReportDate(),
+        name: vol.name,
+        role: vol.role,
+        type: state.presensiType,
+        gps: state.gpsCoords,
+        taskNote: note,
+        photo: state.capturedPhotoBase64,
+        honor: Number(vol.honor),
+        status: "Valid (GPS & Selfie)"
+      };
+
+      // Simpan ringkasan lokal agar langsung muncul di tab Riwayat
+      var localRecord = {
+        "Waktu Server": formatLocalDateTime(new Date()),
+        "ID Presensi": payload.id,
+        "Tanggal Laporan Operasional": payload.reportDate,
+        "Nama Relawan": payload.name,
+        "Divisi": payload.role,
+        "Jenis Presensi": payload.type,
+        "Koordinat GPS": payload.gps,
+        "Aktivitas / Catatan": payload.taskNote,
+        "Link Swafoto Drive": "-",
+        "Honor (Rp)": payload.honor,
+        "Status Verifikasi": state.apiUrl ? "Mengirim..." : "Tersimpan Lokal"
+      };
+
+      if (!state.apiUrl) {
+        state.attendances.unshift(localRecord);
+        localStorage.setItem(STORAGE_KEYS.ATTENDANCES, JSON.stringify(state.attendances));
+        resetPresensiForm();
+        showToast("Presensi tersimpan lokal (URL Google Sheets API belum diatur).", "info");
+        return;
+      }
+
+      var btn = document.getElementById("btnSubmitPresensi");
+      setButtonLoading(btn, true, "MENGIRIM KE GOOGLE SHEETS...");
+
+      postToAppsScript(payload)
+        .then(function(res) {
+          if (res.status === "success") {
+            localRecord["Link Swafoto Drive"] = res.driveUrl || "-";
+            localRecord["Status Verifikasi"] = payload.status;
+            state.attendances.unshift(localRecord);
+            localStorage.setItem(STORAGE_KEYS.ATTENDANCES, JSON.stringify(state.attendances));
+
+            resetPresensiForm();
+            showToast("Presensi " + payload.type + " atas nama " + payload.name + " berhasil tersimpan!", "success");
+          } else {
+            throw new Error(res.message || "Respon error dari server");
+          }
+        })
+        .catch(function(err) {
+          // Masukkan ke antrean offline
+          state.offlineQueue.push(payload);
+          localStorage.setItem(STORAGE_KEYS.OFFLINE_QUEUE, JSON.stringify(state.offlineQueue));
+          updateOfflineQueueUI();
+
+          localRecord["Status Verifikasi"] = "Antrean Offline";
+          state.attendances.unshift(localRecord);
+          localStorage.setItem(STORAGE_KEYS.ATTENDANCES, JSON.stringify(state.attendances));
+
+          resetPresensiForm();
+          showToast("Koneksi bermasalah (" + err.message + "). Data disimpan di Antrean Offline!", "error");
+        })
+        .finally(function() {
+          setButtonLoading(btn, false, "KIRIM PRESENSI SEKARANG");
+        });
+    }
+
+    function resetPresensiForm() {
+      document.getElementById("presensiPin").value = "";
+      document.getElementById("presensiNote").value = "";
+      state.capturedPhotoBase64 = "";
+
+      document.getElementById("photoPreview").classList.add("hidden");
+      document.getElementById("cameraVideo").classList.add("hidden");
+      document.getElementById("cameraPlaceholder").classList.remove("hidden");
+
+      document.getElementById("btnStartCamera").classList.remove("hidden");
+      document.getElementById("btnTakePhoto").classList.add("hidden");
+      document.getElementById("btnRetakePhoto").classList.add("hidden");
+    }
+
+    // ---------- ANTREAN OFFLINE ----------
+    function updateOfflineQueueUI() {
+      var badge = document.getElementById("offlineQueueBadge");
+      var count = document.getElementById("offlineQueueCount");
+      count.textContent = state.offlineQueue.length;
+      if (state.offlineQueue.length > 0) {
+        badge.classList.remove("hidden");
+      } else {
+        badge.classList.add("hidden");
+      }
+    }
+
+    function syncOfflineQueue() {
+      if (!state.apiUrl) {
+        showToast("Atur URL Google Sheets API terlebih dahulu.", "error");
+        return;
+      }
+      if (state.offlineQueue.length === 0) return;
+
+      showToast("Mengirim " + state.offlineQueue.length + " data antrean offline...", "info");
+      var remaining = [];
+
+      var chain = Promise.resolve();
+      state.offlineQueue.forEach(function(item) {
+        chain = chain.then(function() {
+          return postToAppsScript(item)
+            .then(function(res) {
+              if (res.status !== "success") {
+                remaining.push(item);
+              }
+            })
+            .catch(function() {
+              remaining.push(item);
+            });
+        });
+      });
+
+      chain.then(function() {
+        var sentCount = state.offlineQueue.length - remaining.length;
+        state.offlineQueue = remaining;
+        localStorage.setItem(STORAGE_KEYS.OFFLINE_QUEUE, JSON.stringify(state.offlineQueue));
+        updateOfflineQueueUI();
+
+        if (sentCount > 0) {
+          showToast(sentCount + " data antrean berhasil dikirim ke Google Sheets!", "success");
+          fetchAttendancesFromServer(true);
+        }
+        if (remaining.length > 0) {
+          showToast(remaining.length + " data masih gagal terkirim.", "error");
+        }
+      });
+    }
+
+    // ---------- RIWAYAT & REKAP ----------
+    function fetchAttendancesFromServer(silent) {
+      if (!state.apiUrl) {
+        if (!silent) showToast("URL Google Sheets API belum diatur.", "error");
+        return;
+      }
+
+      if (!silent) showToast("Mengambil data presensi dari Google Sheets...", "info");
+
+      fetch(state.apiUrl + "?action=getAttendances&limit=300")
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+          if (res.status === "success" && Array.isArray(res.data)) {
+            state.attendances = res.data.slice().reverse(); // Terbaru di atas
+            localStorage.setItem(STORAGE_KEYS.ATTENDANCES, JSON.stringify(state.attendances));
+            renderAttendanceTable();
+            if (!silent) showToast("Berhasil memuat " + res.data.length + " data presensi.", "success");
+          } else {
+            throw new Error(res.message || "Gagal mengambil data");
+          }
+        })
+        .catch(function(err) {
+          if (!silent) showToast("Gagal menarik data: " + err.message, "error");
+        });
+    }
+
+    function clearDateFilter() {
+      document.getElementById("filterReportDate").value = "";
+      document.getElementById("filterSearch").value = "";
+      renderAttendanceTable();
+    }
+
+    function getFilteredAttendances() {
+      var fDate = document.getElementById("filterReportDate").value;
+      var fSearch = document.getElementById("filterSearch").value.trim().toLowerCase();
+
+      return state.attendances.filter(function(row) {
+        var rowDate = String(row["Tanggal Laporan Operasional"] || "");
+        var rowName = String(row["Nama Relawan"] || "").toLowerCase();
+        var rowRole = String(row["Divisi"] || "").toLowerCase();
+
+        if (fDate && rowDate !== fDate) return false;
+        if (fSearch && rowName.indexOf(fSearch) === -1 && rowRole.indexOf(fSearch) === -1) return false;
+        return true;
+      });
+    }
+
+    function renderAttendanceTable() {
+      var list = getFilteredAttendances();
+      var tbody = document.getElementById("attendanceTableBody");
+
+      // Hitung statistik
+      var masukCount = 0;
+      var pulangCount = 0;
+      var totalHonor = 0;
+
+      list.forEach(function(item) {
+        var jenis = String(item["Jenis Presensi"] || "").toUpperCase();
+        if (jenis === "MASUK") {
+          masukCount++;
+          totalHonor += Number(item["Honor (Rp)"] || 0);
+        } else if (jenis === "PULANG") {
+          pulangCount++;
+        }
+      });
+
+      document.getElementById("statTotal").textContent = list.length;
+      document.getElementById("statMasuk").textContent = masukCount;
+      document.getElementById("statPulang").textContent = pulangCount;
+      document.getElementById("statHonor").textContent = formatRupiah(totalHonor);
+
+      if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">Tidak ada data presensi untuk filter ini.</td></tr>';
+        return;
+      }
+
+      var html = "";
+      list.forEach(function(item) {
+        var jenis = String(item["Jenis Presensi"] || "MASUK");
+        var badgeClass = jenis === "MASUK"
+          ? "bg-emerald-100 text-emerald-800"
+          : "bg-blue-100 text-blue-800";
+
+        var driveUrl = String(item["Link Swafoto Drive"] || "");
+        var gps = String(item["Koordinat GPS"] || "");
+        var photoHtml = driveUrl.indexOf("http") === 0
+          ? '<a href="' + escapeHtml(driveUrl) + '" target="_blank" class="text-blue-700 hover:underline font-semibold">Foto ↗</a>'
+          : '<span class="text-slate-400">-</span>';
+
+        var gpsHtml = gps
+          ? '<a href="https://www.google.com/maps?q=' + encodeURIComponent(gps) + '" target="_blank" class="text-[11px] text-slate-500 hover:text-blue-600 block">📍 Peta</a>'
+          : '';
+
+        html += '<tr class="hover:bg-slate-50">' +
+          '<td class="p-3 whitespace-nowrap text-xs text-slate-600">' + escapeHtml(String(item["Waktu Server"] || "-")) + '</td>' +
+          '<td class="p-3 whitespace-nowrap text-xs font-mono">' + escapeHtml(String(item["Tanggal Laporan Operasional"] || "-")) + '</td>' +
+          '<td class="p-3 font-semibold text-slate-800">' + escapeHtml(String(item["Nama Relawan"] || "-")) + '</td>' +
+          '<td class="p-3 text-xs">' + escapeHtml(String(item["Divisi"] || "-")) + '</td>' +
+          '<td class="p-3"><span class="px-2 py-0.5 rounded-full text-[11px] font-bold ' + badgeClass + '">' + escapeHtml(jenis) + '</span></td>' +
+          '<td class="p-3 text-xs text-slate-600 max-w-[180px] truncate" title="' + escapeHtml(String(item["Aktivitas / Catatan"] || "")) + '">' + escapeHtml(String(item["Aktivitas / Catatan"] || "-")) + '</td>' +
+          '<td class="p-3 whitespace-nowrap text-xs">' + photoHtml + gpsHtml + '</td>' +
+        '</tr>';
+      });
+
+      tbody.innerHTML = html;
+    }
+
+    function exportAttendanceCSV() {
+      var list = getFilteredAttendances();
+      if (list.length === 0) {
+        showToast("Tidak ada data untuk diexport.", "error");
+        return;
+      }
+
+      var headers = [
+        "Waktu Server", "ID Presensi", "Tanggal Laporan Operasional",
+        "Nama Relawan", "Divisi", "Jenis Presensi", "Koordinat GPS",
+        "Aktivitas / Catatan", "Link Swafoto Drive", "Honor (Rp)", "Status Verifikasi"
+      ];
+
+      var lines = [headers.join(",")];
+      list.forEach(function(item) {
+        var row = headers.map(function(h) {
+          var val = String(item[h] !== undefined ? item[h] : "").replace(/"/g, '""');
+          return '"' + val + '"';
+        });
+        lines.push(row.join(","));
+      });
+
+      var blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "Rekap_Presensi_MBG_" + getOperationalReportDate() + ".csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // ---------- PANEL ADMIN & DATA RELAWAN ----------
+    function unlockAdmin() {
+      var inputPin = document.getElementById("adminPinInput").value;
+      var savedPin = localStorage.getItem(STORAGE_KEYS.ADMIN_PIN) || "123456";
+
+      if (inputPin === savedPin) {
+        state.isAdminUnlocked = true;
+        document.getElementById("adminPinInput").value = "";
+        document.getElementById("adminLockBox").classList.add("hidden");
+        document.getElementById("adminContentBox").classList.remove("hidden");
+        showToast("Panel Admin terbuka.", "success");
+      } else {
+        showToast("PIN Admin salah!", "error");
+      }
+    }
+
+    function lockAdmin() {
+      state.isAdminUnlocked = false;
+      document.getElementById("adminContentBox").classList.add("hidden");
+      document.getElementById("adminLockBox").classList.remove("hidden");
+    }
+
+    function changeAdminPin() {
+      var newPin = document.getElementById("newAdminPinInput").value.trim();
+      if (newPin.length < 4) {
+        showToast("PIN Admin minimal 4 karakter.", "error");
+        return;
+      }
+      localStorage.setItem(STORAGE_KEYS.ADMIN_PIN, newPin);
+      document.getElementById("newAdminPinInput").value = "";
+      showToast("PIN Admin berhasil diperbarui di browser ini.", "success");
+    }
+
+    function renderDivisionsUI() {
+      var select = document.getElementById("volRole");
+      var chips = document.getElementById("divisionChips");
+
+      select.innerHTML = "";
+      chips.innerHTML = "";
+
+      state.divisions.forEach(function(div, idx) {
+        var opt = document.createElement("option");
+        opt.value = div;
+        opt.textContent = div;
+        select.appendChild(opt);
+
+        var chip = document.createElement("span");
+        chip.className = "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold border border-slate-200";
+        chip.innerHTML = escapeHtml(div) + ' <button type="button" onclick="removeDivision(' + idx + ')" class="text-rose-500 hover:text-rose-700 font-bold ml-1">×</button>';
+        chips.appendChild(chip);
+      });
+    }
+
+    function addDivision() {
+      var input = document.getElementById("newDivisionInput");
+      var val = input.value.trim().toUpperCase();
+      if (!val) return;
+      if (state.divisions.indexOf(val) !== -1) {
+        showToast("Divisi tersebut sudah ada.", "error");
+        return;
+      }
+      state.divisions.push(val);
+      localStorage.setItem(STORAGE_KEYS.DIVISIONS, JSON.stringify(state.divisions));
+      input.value = "";
+      renderDivisionsUI();
+      showToast("Divisi ditambahkan. Jangan lupa klik 'Simpan ke Sheets'.", "info");
+    }
+
+    function removeDivision(index) {
+      if (state.divisions.length <= 1) {
+        showToast("Minimal harus ada 1 divisi.", "error");
+        return;
+      }
+      state.divisions.splice(index, 1);
+      localStorage.setItem(STORAGE_KEYS.DIVISIONS, JSON.stringify(state.divisions));
+      renderDivisionsUI();
+    }
+
+    function renderAdminVolunteerTable() {
+      var tbody = document.getElementById("adminVolunteerTableBody");
+      document.getElementById("volunteerCountBadge").textContent = state.volunteers.length;
+
+      if (state.volunteers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">Belum ada data relawan.</td></tr>';
+        return;
+      }
+
+      var html = "";
+      state.volunteers.forEach(function(v, idx) {
+        html += '<tr class="hover:bg-slate-50">' +
+          '<td class="p-3 font-mono font-semibold text-slate-700">' + escapeHtml(v.id) + '</td>' +
+          '<td class="p-3 font-bold text-slate-800">' + escapeHtml(v.name) + '</td>' +
+          '<td class="p-3"><span class="px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold">' + escapeHtml(v.role) + '</span></td>' +
+          '<td class="p-3 whitespace-nowrap">' + formatRupiah(v.honor) + '</td>' +
+          '<td class="p-3 font-mono text-slate-500">' + escapeHtml(v.password) + '</td>' +
+          '<td class="p-3 text-right whitespace-nowrap space-x-1">' +
+            '<button onclick="editVolunteer(' + idx + ')" class="px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold">Edit</button>' +
+            '<button onclick="deleteVolunteer(' + idx + ')" class="px-2 py-1 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 font-semibold">Hapus</button>' +
+          '</td>' +
+        '</tr>';
+      });
+      tbody.innerHTML = html;
+    }
+
+    function saveVolunteerForm() {
+      var editIdx = parseInt(document.getElementById("editVolunteerIndex").value, 10);
+      var id = document.getElementById("volId").value.trim();
+      var name = document.getElementById("volName").value.trim();
+      var role = document.getElementById("volRole").value;
+      var honorVal = document.getElementById("volHonor").value;
+      var pin = document.getElementById("volPin").value.trim() || "1234";
+
+      if (!name) {
+        showToast("Nama lengkap relawan wajib diisi.", "error");
+        return;
+      }
+
+      if (!id) {
+        var nextNum = state.volunteers.length + 1;
+        id = "V" + String(nextNum).padStart(3, "0");
+      }
+
+      var honor = honorVal !== "" ? Number(honorVal) : 100000;
+      var volObj = { id: id, name: name, role: role, honor: honor, password: pin };
+
+      if (editIdx >= 0 && editIdx < state.volunteers.length) {
+        state.volunteers[editIdx] = volObj;
+        showToast("Data relawan diperbarui secara lokal.", "success");
+      } else {
+        state.volunteers.push(volObj);
+        showToast("Relawan ditambahkan secara lokal.", "success");
+      }
+
+      localStorage.setItem(STORAGE_KEYS.VOLUNTEERS, JSON.stringify(state.volunteers));
+      resetVolunteerForm();
+      renderAdminVolunteerTable();
+      renderVolunteerDropdown();
+    }
+
+    function editVolunteer(idx) {
+      var v = state.volunteers[idx];
+      if (!v) return;
+      document.getElementById("editVolunteerIndex").value = idx;
+      document.getElementById("volId").value = v.id;
+      document.getElementById("volName").value = v.name;
+      document.getElementById("volRole").value = v.role;
+      document.getElementById("volHonor").value = v.honor;
+      document.getElementById("volPin").value = v.password;
+
+      document.getElementById("volunteerFormTitle").textContent = "Edit Data Relawan: " + v.name;
+      document.getElementById("btnCancelEditVol").classList.remove("hidden");
+    }
+
+    function deleteVolunteer(idx) {
+      var v = state.volunteers[idx];
+      if (!v) return;
+      if (!confirm("Hapus relawan " + v.name + "?")) return;
+
+      state.volunteers.splice(idx, 1);
+      localStorage.setItem(STORAGE_KEYS.VOLUNTEERS, JSON.stringify(state.volunteers));
+      renderAdminVolunteerTable();
+      renderVolunteerDropdown();
+      showToast("Relawan dihapus. Klik 'Simpan ke Sheets' untuk sinkronisasi.", "info");
+    }
+
+    function resetVolunteerForm() {
+      document.getElementById("editVolunteerIndex").value = "-1";
+      document.getElementById("volId").value = "";
+      document.getElementById("volName").value = "";
+      document.getElementById("volHonor").value = "100000";
+      document.getElementById("volPin").value = "1234";
+      document.getElementById("volunteerFormTitle").textContent = "Tambah Relawan Baru";
+      document.getElementById("btnCancelEditVol").classList.add("hidden");
+    }
+
+    // ---------- SINKRONISASI GOOGLE SHEETS API ----------
+    function syncVolunteersFromServer(showNotify) {
+      if (!state.apiUrl) {
+        if (showNotify) showToast("URL Google Sheets API belum diisi.", "error");
+        return;
+      }
+
+      fetch(state.apiUrl + "?action=getVolunteers")
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+          if (res.status === "success") {
+            if (Array.isArray(res.volunteers) && res.volunteers.length > 0) {
+              state.volunteers = res.volunteers;
+              localStorage.setItem(STORAGE_KEYS.VOLUNTEERS, JSON.stringify(state.volunteers));
+            }
+            if (Array.isArray(res.divisions) && res.divisions.length > 0) {
+              state.divisions = res.divisions;
+              localStorage.setItem(STORAGE_KEYS.DIVISIONS, JSON.stringify(state.divisions));
+            }
+            renderDivisionsUI();
+            renderVolunteerDropdown();
+            renderAdminVolunteerTable();
+            updateApiStatusUI(true);
+
+            if (showNotify) {
+              showToast("Berhasil sinkron " + (res.volunteers ? res.volunteers.length : 0) + " relawan dari Sheets!", "success");
+            }
+          } else {
+            throw new Error(res.message || "Gagal mengambil daftar relawan");
+          }
+        })
+        .catch(function(err) {
+          updateApiStatusUI(false);
+          if (showNotify) showToast("Gagal tarik data relawan: " + err.message, "error");
+        });
+    }
+
+    function syncVolunteersToServer() {
+      if (!state.apiUrl) {
+        showToast("URL Google Sheets API belum diatur.", "error");
+        openApiModal();
+        return;
+      }
+
+      showToast("Menyimpan daftar relawan & divisi ke Google Sheets...", "info");
+
+      postToAppsScript({
+        action: "syncVolunteers",
+        volunteers: state.volunteers,
+        divisions: state.divisions
+      })
+      .then(function(res) {
+        if (res.status === "success") {
+          showToast("Berhasil! " + res.count + " relawan tersimpan di Google Sheets.", "success");
+          updateApiStatusUI(true);
+        } else {
+          throw new Error(res.message || "Gagal sinkronisasi");
+        }
+      })
+      .catch(function(err) {
+        showToast("Gagal simpan ke Sheets: " + err.message, "error");
+      });
+    }
+
+    // Penting: Gunakan text/plain agar Google Apps Script tidak terkena blokir CORS preflight
+    function postToAppsScript(payload) {
+      return fetch(state.apiUrl, {
+        method: "POST",
+        redirect: "follow",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(payload)
+      }).then(function(response) {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        return response.json();
+      });
+    }
+
+    // ---------- MODAL API ----------
+    function openApiModal() {
+      document.getElementById("apiUrlInput").value = state.apiUrl;
+      document.getElementById("apiTestResult").classList.add("hidden");
+      document.getElementById("apiModal").classList.remove("hidden");
+    }
+
+    function closeApiModal() {
+      document.getElementById("apiModal").classList.add("hidden");
+    }
+
+    function testApiConnection() {
+      var url = document.getElementById("apiUrlInput").value.trim();
+      var box = document.getElementById("apiTestResult");
+
+      if (!url || url.indexOf("script.google.com") === -1) {
+        box.className = "p-3 rounded-xl text-xs bg-rose-50 text-rose-800 border border-rose-200";
+        box.textContent = "Format URL tidak valid. Pastikan URL berasal dari deployment Apps Script (/exec).";
+        box.classList.remove("hidden");
+        return;
+      }
+
+      box.className = "p-3 rounded-xl text-xs bg-blue-50 text-blue-800 border border-blue-200";
+      box.textContent = "Menghubungi server Apps Script...";
+      box.classList.remove("hidden");
+
+      fetch(url + "?action=ping")
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+          if (res.status === "success") {
+            box.className = "p-3 rounded-xl text-xs bg-emerald-50 text-emerald-800 border border-emerald-200";
+            box.textContent = "✓ Koneksi berhasil! " + (res.message || "Server SIPGN siap digunakan.");
+          } else {
+            throw new Error(res.message || "Respon tidak dikenal");
+          }
+        })
+        .catch(function(err) {
+          box.className = "p-3 rounded-xl text-xs bg-rose-50 text-rose-800 border border-rose-200";
+          box.textContent = "✕ Gagal terhubung: " + err.message + ". Pastikan akses deployment diset 'Anyone'.";
+        });
+    }
+
+    function saveApiUrl() {
+      var url = document.getElementById("apiUrlInput").value.trim();
+      state.apiUrl = url;
+      localStorage.setItem(STORAGE_KEYS.API_URL, url);
+      updateApiStatusUI();
+      closeApiModal();
+
+      if (url) {
+        syncVolunteersFromServer(true);
+        fetchAttendancesFromServer(true);
+      } else {
+        showToast("URL API dikosongkan (Mode Lokal).", "info");
+      }
+    }
+
+    function updateApiStatusUI(connectedOverride) {
+      var dot = document.getElementById("apiStatusDot");
+      var text = document.getElementById("apiStatusText");
+
+      if (!state.apiUrl) {
+        dot.className = "w-2 h-2 rounded-full bg-amber-400";
+        text.textContent = "Mode Lokal";
+        return;
+      }
+
+      if (connectedOverride === false) {
+        dot.className = "w-2 h-2 rounded-full bg-rose-400";
+        text.textContent = "API Terputus";
+      } else {
+        dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+        text.textContent = "Terhubung Sheets";
+      }
+    }
+
+    // ---------- HELPERS ----------
+    function findVolunteerById(id) {
+      for (var i = 0; i < state.volunteers.length; i++) {
+        if (String(state.volunteers[i].id) === String(id)) return state.volunteers[i];
+      }
+      return null;
+    }
+
+    function formatRupiah(num) {
+      return "Rp " + Number(num || 0).toLocaleString("id-ID");
+    }
+
+    function formatLocalDateTime(d) {
+      var pad = function(n) { return String(n).padStart(2, "0"); };
+      return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+        pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    }
+
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function setButtonLoading(btn, isLoading, text) {
+      btn.disabled = isLoading;
+      if (isLoading) {
+        btn.classList.add("opacity-75", "cursor-not-allowed");
+        btn.innerHTML = '<span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full spinner inline-block"></span><span>' + text + '</span>';
+      } else {
+        btn.classList.remove("opacity-75", "cursor-not-allowed");
+        btn.innerHTML = '<span>' + text + '</span>';
+      }
+    }
+
+    function showToast(message, type) {
+      var container = document.getElementById("toastContainer");
+      var toast = document.createElement("div");
+
+      var colors = {
+        success: "bg-emerald-700 text-white",
+        error: "bg-rose-700 text-white",
+        info: "bg-slate-800 text-white"
+      };
+      toast.className = "pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-xs sm:text-sm font-medium transition-all " + (colors[type] || colors.info);
+      toast.textContent = message;
+
+      container.appendChild(toast);
+      setTimeout(function() {
+        toast.style.opacity = "0";
+        setTimeout(function() {
+          if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 300);
+      }, 4000);
+    }
+  </script>
+</body>
+</html>
